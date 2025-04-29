@@ -10,12 +10,6 @@ impl VecTracker {
     }
 }
 
-impl Default for VecTracker {
-    fn default() -> Self {
-        Self { borrows: Default::default() }
-    }
-}
-
 impl BorrowTracker for VecTracker {
     fn add_shr(&mut self, start : usize, end : usize) {
         for b in self.borrows.as_mut_slice()[start..end].iter_mut() {
@@ -39,5 +33,9 @@ impl BorrowTracker for VecTracker {
         for b in self.borrows.as_mut_slice()[start..end].iter_mut() {
             b.rm_mut();
         }
+    }
+    
+    fn into_state(self) -> Vec<BorrowState> {
+        self.borrows
     }
 }

@@ -1,28 +1,31 @@
+#![feature(btree_cursors)]
 use std::{cell::Cell, ops::{Deref, DerefMut}, sync::{Arc, Mutex}};
 
 use borrowstate::BorrowState;
 use borrowtracker::BorrowTracker;
+use btreetracker::BTreeTracker;
 use vectracker::VecTracker;
 
 mod borrowstate;
 mod borrowtracker;
 mod vectracker;
+mod btreetracker;
 
 
 pub struct SubSlice<'a,T> {
-    data : &'a [T],
-    borrows : Mutex<VecTracker>
+    data : &'a mut [T],
+    borrows : Mutex<BTreeTracker>
 }
 
 impl<'a,T> SubSlice<'a,T> {
     pub fn new(raw : &'a mut [T]) -> Self {
         let len = raw.len();
-        let init_borrows = Mutex::new(VecTracker::new(len));
+        let init_borrows = Mutex::new(BTreeTracker::new(len));
         SubSlice { data: raw, borrows: init_borrows }
     }
 
     pub fn sub(&'a self, start : usize, end : usize) -> Sub<'a,T> {
-        assert!(start <= end && end < self.data.len());
+        assert!(start < end && end < self.data.len());
         let mut borrows = self.borrows.lock().unwrap();
         borrows.add_shr(start, end);
         Sub {
@@ -34,7 +37,7 @@ impl<'a,T> SubSlice<'a,T> {
     }
 
     pub fn sub_mut(&'a self, start : usize, end : usize) -> SubMut<'a,T> {
-        assert!(start <= end && end < self.data.len());
+        assert!(start < end && end < self.data.len());
 
         let mut borrows = self.borrows.lock().unwrap();
         borrows.add_mut(start, end);
@@ -122,18 +125,4 @@ impl<'a,T> Drop for SubMut<'a,T> {
         let mut borrows = self.parent.borrows.lock().unwrap();
         borrows.rm_mut(self.start, self.end);
     }
-}
-
-#[test]
-fn foo(){
-    let mut xs = [1,2,3,4,5];
-
-    let sl = SubSlice::new(&mut xs);
-
-    let a = sl.sub(0, 1);
-    let b = sl.sub(1, 2);
-    let c = sl.sub(1, 2);
-    let d = sl.sub_mut(2, 4);
-    let e = sl.sub(0, 1);
-    let f = sl.sub(1, 2);
 }
