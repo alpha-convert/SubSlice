@@ -1,4 +1,4 @@
-use std::{cell::Cell, ops::{Deref, DerefMut}};
+use std::{cell::Cell, ops::{Deref, DerefMut}, sync::{Arc, Mutex}};
 
 use borrowstate::BorrowState;
 use borrowtracker::BorrowTracker;
@@ -11,21 +11,20 @@ mod vectracker;
 
 pub struct SubSlice<'a,T> {
     data : &'a [T],
-    borrows : Cell<VecTracker>
+    borrows : Mutex<VecTracker>
 }
 
 impl<'a,T> SubSlice<'a,T> {
     pub fn new(raw : &'a mut [T]) -> Self {
         let len = raw.len();
-        let init_borrows = Cell::new(VecTracker::new(len));
+        let init_borrows = Mutex::new(VecTracker::new(len));
         SubSlice { data: raw, borrows: init_borrows }
     }
 
     pub fn sub(&'a self, start : usize, end : usize) -> Sub<'a,T> {
         assert!(start <= end && end < self.data.len());
-        let mut borrows = self.borrows.take();
+        let mut borrows = self.borrows.lock().unwrap();
         borrows.add_shr(start, end);
-        self.borrows.set(borrows);
         Sub {
             parent: &self,
             start,
@@ -37,10 +36,8 @@ impl<'a,T> SubSlice<'a,T> {
     pub fn sub_mut(&'a self, start : usize, end : usize) -> SubMut<'a,T> {
         assert!(start <= end && end < self.data.len());
 
-        let mut borrows = self.borrows.take();
+        let mut borrows = self.borrows.lock().unwrap();
         borrows.add_mut(start, end);
-        self.borrows.set(borrows);
-
 
         let p = self.data.as_ptr() as *mut T;
         let d = unsafe {
@@ -81,9 +78,9 @@ impl<'a,T> AsRef<[T]> for Sub<'a,T> {
 
 impl<'a,T> Drop for Sub<'a,T> {
     fn drop(&mut self) {
-        let mut borrows = self.parent.borrows.take();
+        let mut borrows = self.parent.borrows.lock().unwrap();
         borrows.rm_shr(self.start, self.end);
-        self.parent.borrows.set(borrows);
+        // self.parent.borrows.set(borrows);
     }
 }
 
@@ -122,9 +119,8 @@ impl <'a,T> DerefMut for SubMut<'a,T>  {
 
 impl<'a,T> Drop for SubMut<'a,T> {
     fn drop(&mut self) {
-        let mut borrows = self.parent.borrows.take();
+        let mut borrows = self.parent.borrows.lock().unwrap();
         borrows.rm_mut(self.start, self.end);
-        self.parent.borrows.set(borrows);
     }
 }
 
