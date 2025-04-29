@@ -1,34 +1,30 @@
 use std::{cell::Cell, ops::{Deref, DerefMut}};
 
-#[derive(Debug, Clone, Copy)]
-enum BorrowState {
-    Not,
-    Shared(usize),
-    Mutable
-}
+use borrowstate::BorrowState;
+use borrowtracker::BorrowTracker;
+use vectracker::VecTracker;
+
+mod borrowstate;
+mod borrowtracker;
+mod vectracker;
+
 
 pub struct SubSlice<'a,T> {
     data : &'a [T],
-    borrows : Cell<&'a mut [BorrowState]>
+    borrows : Cell<VecTracker>
 }
 
 impl<'a,T> SubSlice<'a,T> {
     pub fn new(raw : &'a mut [T]) -> Self {
         let len = raw.len();
-        let init_borrows = Cell::new(vec![BorrowState::Not;len].leak());
+        let init_borrows = Cell::new(VecTracker::new(len));
         SubSlice { data: raw, borrows: init_borrows }
     }
 
     pub fn sub(&'a self, start : usize, end : usize) -> Sub<'a,T> {
         assert!(start <= end && end < self.data.len());
-        let borrows = self.borrows.take();
-        borrows[start..end].iter_mut().enumerate().for_each(|(i,b)| {
-            match b {
-                BorrowState::Not => *b = BorrowState::Shared(1),
-                BorrowState::Shared(n) => { *n += 1 },
-                BorrowState::Mutable => panic!("Cannot shared borrow already mutably borrowed index {}",i),
-            }
-        });
+        let mut borrows = self.borrows.take();
+        borrows.add_shr(start, end);
         self.borrows.set(borrows);
         Sub {
             parent: &self,
@@ -41,14 +37,8 @@ impl<'a,T> SubSlice<'a,T> {
     pub fn sub_mut(&'a self, start : usize, end : usize) -> SubMut<'a,T> {
         assert!(start <= end && end < self.data.len());
 
-        let borrows = self.borrows.take();
-        borrows[start..end].iter_mut().enumerate().for_each(|(i,b)| {
-            match b {
-                BorrowState::Not => *b = BorrowState::Mutable,
-                BorrowState::Shared(_) => panic!("Cannot mutably borrow already shared-borrowed index {}", i),
-                BorrowState::Mutable => panic!("Cannot mutably borrow already mutably borrowed index {}",i),
-            }
-        });
+        let mut borrows = self.borrows.take();
+        borrows.add_mut(start, end);
         self.borrows.set(borrows);
 
 
@@ -65,19 +55,6 @@ impl<'a,T> SubSlice<'a,T> {
             data: d,
         }
 
-    }
-
-    fn relinquish(&self, start : usize, end : usize) {
-        let borrows = self.borrows.take();
-        for (i,b) in &mut borrows[start..end].iter_mut().enumerate() {
-            match b {
-                BorrowState::Not => panic!("Cannot relinquish unborrowed index {}",i),
-                BorrowState::Shared(0) => { *b = BorrowState::Not },
-                BorrowState::Shared(n) => { *n -= 1 },
-                BorrowState::Mutable => { *b = BorrowState::Not },
-            }
-        }
-        self.borrows.set(borrows);
     }
 }
 
@@ -104,7 +81,9 @@ impl<'a,T> AsRef<[T]> for Sub<'a,T> {
 
 impl<'a,T> Drop for Sub<'a,T> {
     fn drop(&mut self) {
-        self.parent.relinquish(self.start, self.end);
+        let mut borrows = self.parent.borrows.take();
+        borrows.rm_shr(self.start, self.end);
+        self.parent.borrows.set(borrows);
     }
 }
 
@@ -143,7 +122,9 @@ impl <'a,T> DerefMut for SubMut<'a,T>  {
 
 impl<'a,T> Drop for SubMut<'a,T> {
     fn drop(&mut self) {
-        self.parent.relinquish(self.start, self.end);
+        let mut borrows = self.parent.borrows.take();
+        borrows.rm_mut(self.start, self.end);
+        self.parent.borrows.set(borrows);
     }
 }
 
