@@ -1,5 +1,9 @@
 #![feature(btree_cursors)]
-use std::{cell::Cell, ops::{Deref, DerefMut}, sync::{Arc, Mutex}};
+use std::{
+    cell::Cell,
+    ops::{Deref, DerefMut},
+    sync::{Arc, Mutex},
+};
 
 use borrowstate::BorrowState;
 use borrowtracker::BorrowTracker;
@@ -7,25 +11,28 @@ use btreetracker::BTreeTracker;
 
 pub mod borrowstate;
 pub mod borrowtracker;
-pub mod vectracker;
 pub mod btreetracker;
+pub mod vectracker;
 
-
-pub struct SubSlice<'a,T, B = BTreeTracker> {
-    data : &'a mut [T],
-    borrows : Mutex<B>
+pub struct SubSlice<'a, T, B = BTreeTracker> {
+    data: &'a mut [T],
+    borrows: Mutex<B>,
 }
 
-impl<'a,T,B> SubSlice<'a,T,B>
-    where B : BorrowTracker
+impl<'a, T, B> SubSlice<'a, T, B>
+where
+    B: BorrowTracker,
 {
-    pub fn new(raw : &'a mut [T]) -> Self {
+    pub fn new(raw: &'a mut [T]) -> Self {
         let len = raw.len();
         let init_borrows = Mutex::new(B::new(len));
-        SubSlice { data: raw, borrows: init_borrows }
+        SubSlice {
+            data: raw,
+            borrows: init_borrows,
+        }
     }
 
-    pub fn sub(&'a self, start : usize, end : usize) -> Sub<'a,T,B> {
+    pub fn sub(&'a self, start: usize, end: usize) -> Sub<'a, T, B> {
         assert!(start < end && end < self.data.len());
         let mut borrows = self.borrows.lock().unwrap();
         borrows.add_shr(start, end);
@@ -37,7 +44,7 @@ impl<'a,T,B> SubSlice<'a,T,B>
         }
     }
 
-    pub fn sub_mut(&'a self, start : usize, end : usize) -> SubMut<'a,T,B> {
+    pub fn sub_mut(&'a self, start: usize, end: usize) -> SubMut<'a, T, B> {
         assert!(start < end && end < self.data.len());
 
         let mut borrows = self.borrows.lock().unwrap();
@@ -55,18 +62,17 @@ impl<'a,T,B> SubSlice<'a,T,B>
             end,
             data: d,
         }
-
     }
 }
 
-pub struct Sub<'a,T,B : BorrowTracker> {
-    parent : &'a SubSlice<'a,T,B>,
-    start : usize,
-    end : usize,
-    data : &'a [T]
+pub struct Sub<'a, T, B: BorrowTracker> {
+    parent: &'a SubSlice<'a, T, B>,
+    start: usize,
+    end: usize,
+    data: &'a [T],
 }
 
-impl<'a,T,B : BorrowTracker> Deref for Sub<'a,T,B> {
+impl<'a, T, B: BorrowTracker> Deref for Sub<'a, T, B> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
@@ -74,13 +80,13 @@ impl<'a,T,B : BorrowTracker> Deref for Sub<'a,T,B> {
     }
 }
 
-impl<'a,T,B : BorrowTracker> AsRef<[T]> for Sub<'a,T,B> {
+impl<'a, T, B: BorrowTracker> AsRef<[T]> for Sub<'a, T, B> {
     fn as_ref(&self) -> &[T] {
         self.data
     }
 }
 
-impl<'a,T,B : BorrowTracker> Drop for Sub<'a,T,B> {
+impl<'a, T, B: BorrowTracker> Drop for Sub<'a, T, B> {
     fn drop(&mut self) {
         let mut borrows = self.parent.borrows.lock().unwrap();
         borrows.rm_shr(self.start, self.end);
@@ -88,14 +94,14 @@ impl<'a,T,B : BorrowTracker> Drop for Sub<'a,T,B> {
     }
 }
 
-pub struct SubMut<'a,T,B : BorrowTracker> {
-    parent : &'a SubSlice<'a,T,B>,
-    start : usize,
-    end : usize,
-    data : &'a mut [T]
+pub struct SubMut<'a, T, B: BorrowTracker> {
+    parent: &'a SubSlice<'a, T, B>,
+    start: usize,
+    end: usize,
+    data: &'a mut [T],
 }
 
-impl<'a,T,B : BorrowTracker> Deref for SubMut<'a,T,B> {
+impl<'a, T, B: BorrowTracker> Deref for SubMut<'a, T, B> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
@@ -103,25 +109,25 @@ impl<'a,T,B : BorrowTracker> Deref for SubMut<'a,T,B> {
     }
 }
 
-impl<'a,T,B : BorrowTracker> AsRef<[T]> for SubMut<'a,T,B> {
+impl<'a, T, B: BorrowTracker> AsRef<[T]> for SubMut<'a, T, B> {
     fn as_ref(&self) -> &[T] {
         self.data
     }
 }
 
-impl<'a,T,B : BorrowTracker> AsMut<[T]> for SubMut<'a,T,B> {
+impl<'a, T, B: BorrowTracker> AsMut<[T]> for SubMut<'a, T, B> {
     fn as_mut(&mut self) -> &mut [T] {
         self.data
     }
 }
 
-impl <'a,T,B : BorrowTracker> DerefMut for SubMut<'a,T,B>  {
+impl<'a, T, B: BorrowTracker> DerefMut for SubMut<'a, T, B> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.data
     }
 }
 
-impl<'a,T, B : BorrowTracker> Drop for SubMut<'a,T,B> {
+impl<'a, T, B: BorrowTracker> Drop for SubMut<'a, T, B> {
     fn drop(&mut self) {
         let mut borrows = self.parent.borrows.lock().unwrap();
         borrows.rm_mut(self.start, self.end);
