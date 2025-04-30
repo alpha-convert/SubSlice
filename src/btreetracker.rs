@@ -2,27 +2,25 @@ use std::{collections::BTreeMap, ops::Bound};
 
 use crate::{borrowstate::BorrowState, borrowtracker::BorrowTracker};
 
+#[derive(Debug)]
 pub struct BTreeTracker {
     len : usize, // length of the underlying
     borrows : BTreeMap<usize,BorrowState>
 }
 
-impl BTreeTracker {
-    pub fn new(len : usize) -> Self {
+impl BorrowTracker for BTreeTracker {
+    fn new(len : usize) -> Self {
         let mut b = BTreeMap::new();
         b.insert(0, BorrowState::Not);
         b.insert(len, BorrowState::Not);
         BTreeTracker { len: len, borrows: b }
     }
-}
 
-
-impl BorrowTracker for BTreeTracker {
     fn add_shr(&mut self, start : usize, end : usize) {
 
         self.borrows.entry(start).and_modify(|b| {b.add_shr()}).or_insert(BorrowState::Shared(1));
 
-        let mut cur = self.borrows.lower_bound_mut(Bound::Included(&start));
+        let mut cur = self.borrows.lower_bound_mut(Bound::Excluded(&start));
         let mut end_state = BorrowState::Not;
         while let Some((i,b)) = cur.next() {
             if *i >= end {
@@ -38,7 +36,7 @@ impl BorrowTracker for BTreeTracker {
     fn add_mut(&mut self, start : usize, end : usize) {
         self.borrows.entry(start).and_modify(|b| {b.add_mut()}).or_insert(BorrowState::Mutable);
 
-        let mut cur = self.borrows.lower_bound_mut(Bound::Included(&start));
+        let mut cur = self.borrows.lower_bound_mut(Bound::Excluded(&start));
         while let Some((i,b)) = cur.next() {
             if *i >= end {
                 break;

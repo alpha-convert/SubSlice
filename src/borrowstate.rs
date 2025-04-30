@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BorrowState {
     Not,
     Shared(usize),
@@ -17,7 +17,7 @@ impl BorrowState {
     pub fn rm_shr(&mut self) {
         match self {
             BorrowState::Not => { panic!("") },
-            BorrowState::Shared(0) => { *self = BorrowState::Not },
+            BorrowState::Shared(1) => { *self = BorrowState::Not },
             BorrowState::Shared(n) => { *n -= 1 },
             BorrowState::Mutable => panic!(""),
         }
